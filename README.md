@@ -88,12 +88,12 @@ List all frames currently matched and analyzed.
 }
 ```
 
-### `GET /detail?id=<id>&img=1`
-Fetch detailed analysis for a specific frame ID. Optionally include inline base64 images by setting `img=1`.
+### `GET /detail?id=<id>`
+Fetch detailed analysis for a specific frame ID. By default, inline base64 images are included. To exclude them, append `&img=0`.
 
 **Request Query:**
 - `id`: The frame ID (e.g., `000000`).
-- `img` (optional): Set to `1` to include `image_data` and `bev_data` fields containing Base64 encoded images.
+- `img` (optional): Defaults to `1`. Set to `0` to omit `image_data` and `bev_data` base64 fields, reducing payload size.
 
 **Response:** `200 OK`
 ```json
@@ -291,12 +291,12 @@ python server_v2.py --images ./images --bev ./bev --graphs ./graphs --port 8765
 }
 ```
 
-### `GET /detail?id=<id>&img=1`
-获取特定帧 ID 的详细分析结果。可选：设置 `img=1` 包含内联的 base64 图像数据。
+### `GET /detail?id=<id>`
+获取特定帧 ID 的详细分析结果。默认情况下会包含内联的 base64 图像数据，如需排除图片请附加参数 `&img=0`。
 
 **请求查询参数:**
 - `id`: 帧 ID（例如：`000000`）。
-- `img` (可选): 设置为 `1` 将在响应的 `image_data` 和 `bev_data` 字段中携带 Base64 编码的图像内容。
+- `img` (可选): 默认为 `1`。设置为 `0` 可在响应中排除 `image_data` 和 `bev_data` 字段，从而减小传输体积。
 
 **响应:** `200 OK` (内容同上文英文文档示例)
 
