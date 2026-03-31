@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行人缓行通过流 · 实时分析系统</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f4f0;--surface:#fff;--surface2:#f1efe8;--surface3:#eae8e0;
+  --text:#1a1a18;--text2:#5f5e5a;--text3:#888780;
+  --border:rgba(0,0,0,0.10);--border2:rgba(0,0,0,0.20);
+  --rmd:8px;--rlg:12px;
+  --safe:#1D9E75;--safe-bg:#EAF3DE;--safe-border:#9FE1CB;
+  --caution:#0F6E56;--caution-bg:#E1F5EE;--caution-border:#9FE1CB;
+  --slow:#854F0B;--slow-bg:#FAEEDA;--slow-border:#FAC775;
+  --stop:#A32D2D;--stop-bg:#FCEBEB;--stop-border:#F7C1C1;
+  --blue:#185FA5;--blue-bg:#E6F1FB;--blue-border:#B5D4F4;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#18180f;--surface:#262620;--surface2:#1e1e18;--surface3:#2c2c24;
+  --text:#e6e4dc;--text2:#a8a69e;--text3:#706e68;
+  --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.16);
+}}
+body{font-family:-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Top bar ── */
+.topbar{display:flex;align-items:center;gap:12px;padding:0 20px;height:52px;background:var(--surface);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.topbar-logo{width:28px;height:28px;background:var(--blue-bg);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.topbar h1{font-size:15px;font-weight:500}
+.topbar-sub{font-size:11px;color:var(--text3);margin-left:4px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.status-pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;border:0.5px solid var(--border);font-size:11px;color:var(--text2);cursor:pointer;background:var(--surface2)}
+.status-pill:hover{background:var(--surface3)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--text3);transition:background .3s}
+.dot.ok{background:var(--safe)}
+.dot.err{background:var(--stop)}
+.dot.pulse{background:var(--blue);animation:pulse .9s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Main layout ── */
+.layout{display:flex;flex:1;overflow:hidden}
+
+/* ── Left panel ── */
+.left{width:300px;flex-shrink:0;border-right:0.5px solid var(--border);display:flex;flex-direction:column;background:var(--surface);overflow:hidden}
+.panel-header{padding:12px 16px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.panel-title{font-size:12px;font-weight:500;color:var(--text2);letter-spacing:.04em;text-transform:uppercase}
+.count-badge{font-size:11px;background:var(--surface2);color:var(--text3);padding:2px 8px;border-radius:10px}
+
+/* ── Config section ── */
+.config-section{padding:12px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.field-row{margin-bottom:8px}
+.field-label{font-size:11px;color:var(--text3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.field-label .tag{font-size:10px;padding:1px 5px;border-radius:3px;font-weight:500}
+.tag-img{background:#E6F1FB;color:#185FA5}
+.tag-bev{background:#EAF3DE;color:#1D9E75}
+.tag-json{background:#FAEEDA;color:#854F0B}
+input[type=text]{width:100%;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--rmd);padding:6px 9px;font-size:12px;color:var(--text);outline:none;font-family:inherit;transition:border-color .15s}
+input[type=text]:focus{border-color:var(--border2)}
+.btn{border:0.5px solid var(--border2);background:transparent;color:var(--text);padding:6px 12px;border-radius:var(--rmd);cursor:pointer;font-size:12px;transition:background .12s,transform .08s;font-family:inherit}
+.btn:hover{background:var(--surface2)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue);font-weight:500}
+.btn.primary:hover{background:#d4e9f8}
+.btn-row{display:flex;gap:6px;margin-top:8px}
+
+/* ── File list ── */
+.file-list{flex:1;overflow-y:auto}
+.file-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:0.5px solid var(--border);cursor:pointer;transition:background .1s;user-select:none}
+.file-item:hover{background:var(--surface2)}
+.file-item.active{background:var(--blue-bg)}
+.file-icon-group{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.file-dot{width:6px;height:6px;border-radius:50%;background:var(--border2)}
+.file-dot.has{background:var(--safe)}
+.file-dot.miss{background:var(--text3);opacity:.4}
+.file-info{flex:1;min-width:0}
+.file-id{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-meta{font-size:11px;color:var(--text3)}
+.spi-chip{flex-shrink:0;font-size:11px;font-weight:500;padding:3px 8px;border-radius:10px;min-width:40px;text-align:center}
+.empty-list{padding:32px 16px;text-align:center;color:var(--text3);font-size:13px}
+
+/* ── Right panel (detail) ── */
+.right{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.empty-right{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--text3)}
+.empty-right .icon{font-size:36px;opacity:.35}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--rlg);padding:16px}
+.card-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:12px}
+
+/* ── Image viewer ── */
+.img-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.img-box{position:relative;background:var(--surface2);border-radius:var(--rmd);overflow:hidden;aspect-ratio:4/3}
+.img-box img{width:100%;height:100%;object-fit:cover}
+.img-box .img-label{position:absolute;bottom:6px;left:6px;font-size:10px;background:rgba(0,0,0,.55);color:#fff;padding:2px 6px;border-radius:4px}
+.img-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px}
+
+/* ── Gauge ── */
+.gauge-row{display:flex;align-items:center;gap:16px}
+.gauge-wrap{flex-shrink:0}
+.gauge-info{flex:1}
+.level-badge{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;font-size:15px;font-weight:500;margin-bottom:6px}
+.level-dot2{width:9px;height:9px;border-radius:50%}
+.advisory-box{border-radius:var(--rmd);padding:10px 12px;font-size:13px;line-height:1.65;border:0.5px solid}
+
+/* ── Layer bars ── */
+.lbar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.lbar-label{width:130px;font-size:12px;color:var(--text2);flex-shrink:0}
+.lbar-track{flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden}
+.lbar-fill{height:100%;border-radius:3px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+.lbar-val{width:32px;text-align:right;font-size:12px;color:var(--text2)}
+
+/* ── Detail tables ── */
+.tabs{display:flex;gap:4px;margin-bottom:12px}
+.tab{padding:5px 11px;border-radius:16px;font-size:12px;cursor:pointer;border:0.5px solid transparent;color:var(--text2);transition:all .12s;background:transparent;font-family:inherit}
+.tab.active{background:var(--surface);border-color:var(--border);color:var(--text);font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--surface2);padding:6px 10px;text-align:left;font-weight:500;color:var(--text2);border-bottom:0.5px solid var(--border)}
+td{padding:6px 10px;border-bottom:0.5px solid var(--border);color:var(--text)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2)}
+.vtag{display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:500}
+.vt-TRUCK{background:#FCEBEB;color:#A32D2D}
+.vt-CAR{background:#E6F1FB;color:#185FA5}
+.vt-VAN{background:#FAEEDA;color:#854F0B}
+.vt-MOTORCYCLIST,.vt-CYCLIST{background:#F1EFE8;color:#5F5E5A}
+.vt-BUS{background:#FBEAF0;color:#993556}
+.risk-y{color:#E24B4A;font-weight:500}
+.risk-n{color:var(--text3)}
+
+/* ── Refresh indicator ── */
+.refresh-bar{height:2px;background:var(--blue);width:0;transition:none;position:fixed;top:0;left:0;z-index:100}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="refresh-bar" id="progress"></div>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-logo">🚶</div>
+  <div>
+    <span class="topbar h1" style="font-size:15px;font-weight:500">行人缓行通过流分析</span>
+    <span class="topbar-sub">实时文件夹监控模式</span>
+  </div>
+  <div class="topbar-right">
+    <div style="font-size:11px;color:var(--text3)" id="scan-time"></div>
+    <div class="status-pill" onclick="checkHealth()" id="status-pill">
+      <div class="dot" id="conn-dot"></div>
+      <span id="conn-label">未连接</span>
+    </div>
+  </div>
+</div>
+
+<!-- Layout -->
+<div class="layout">
+
+  <!-- Left: config + file list -->
+  <div class="left">
+    <div class="config-section">
+      <div class="field-row">
+        <div class="field-label">服务器地址</div>
+        <input type="text" id="server-url" value="http://localhost:8765" placeholder="http://localhost:8765">
+      </div>
+      <div class="field-row">
+        <div class="field-label"><span class="tag tag-img">IMG</span> 原图文件夹路径</div>
+        <input type="text" id="dir-images" placeholder="/path/to/images">
+      </div>
+      <div class="field-row">
+        <div class="field-label"><span class="tag tag-bev">BEV</span> BEV图文件夹路径</div>
+        <input type="text" id="dir-bev" placeholder="/path/to/bev">
+      </div>
+      <div class="field-row">
+        <div class="field-label"><span class="tag tag-json">JSON</span> Scene Graph文件夹路径</div>
+        <input type="text" id="dir-graphs" placeholder="/path/to/graphs">
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="resetDirs()">清空</button>
+        <button class="btn primary" onclick="applyDirs()" style="flex:2">应用路径 →</button>
+      </div>
+      <div id="config-msg" style="font-size:11px;color:var(--text3);margin-top:6px;min-height:14px"></div>
+    </div>
+
+    <div class="panel-header">
+      <span class="panel-title">场景列表</span>
+      <span class="count-badge" id="list-count">0</span>
+    </div>
+    <div class="file-list" id="file-list">
+      <div class="empty-list">配置文件夹路径后<br>自动加载场景</div>
+    </div>
+  </div>
+
+  <!-- Right: detail -->
+  <div class="right" id="detail-panel">
+    <div class="empty-right">
+      <div class="icon">🗂️</div>
+      <div>选择左侧场景查看详情</div>
+      <div style="font-size:12px;margin-top:4px">配置三个文件夹路径后，系统将自动检测并分析所有匹配的场景</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let activeId = null;
+let allItems = [];
+let pollTimer = null;
+
+const server = () => document.getElementById("server-url").value.trim();
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+function progress(pct) {
+  const bar = document.getElementById("progress");
+  if(pct>=100){ bar.style.transition="width .15s"; bar.style.width="100%";
+    setTimeout(()=>{ bar.style.transition="none"; bar.style.width="0"; },200); }
+  else { bar.style.transition="width .4s"; bar.style.width=pct+"%"; }
+}
+
+async function api(path, opts={}) {
+  progress(30);
+  try {
+    const r = await fetch(server()+path, { signal: AbortSignal.timeout(5000), ...opts });
+    progress(70);
+    const data = await r.json();
+    progress(100);
+    return data;
+  } catch(e) { progress(100); throw e; }
+}
+
+// ─── Health / connection ──────────────────────────────────────────────────────
+async function checkHealth() {
+  const dot = document.getElementById("conn-dot");
+  const lbl = document.getElementById("conn-label");
+  dot.className = "dot pulse"; lbl.textContent = "连接中...";
+  try {
+    await api("/health");
+    dot.className = "dot ok"; lbl.textContent = "已连接";
+    startPolling();
+  } catch {
+    dot.className = "dot err"; lbl.textContent = "连接失败";
+  }
+}
+
+// ─── Folder config ────────────────────────────────────────────────────────────
+async function applyDirs() {
+  const msg = document.getElementById("config-msg");
+  msg.style.color = "var(--text3)";
+  msg.textContent = "正在应用...";
+  try {
+    const r = await api("/config", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        images_dir: document.getElementById("dir-images").value.trim()||null,
+        bev_dir:    document.getElementById("dir-bev").value.trim()||null,
+        graphs_dir: document.getElementById("dir-graphs").value.trim()||null,
+      })
+    });
+    const s = r.status;
+    msg.style.color = "var(--safe)";
+    msg.textContent = `已加载：共 ${s.total_ids} 个场景，${s.analyzed} 已分析${s.errors?`，${s.errors} 错误`:""}`;
+    refreshList();
+  } catch(e) {
+    msg.style.color = "var(--stop)";
+    msg.textContent = "应用失败：" + e.message;
+  }
+}
+
+function resetDirs() {
+  ["dir-images","dir-bev","dir-graphs"].forEach(id=>{
+    document.getElementById(id).value = "";
+  });
+}
+
+// ─── Polling ──────────────────────────────────────────────────────────────────
+function startPolling() {
+  if(pollTimer) clearInterval(pollTimer);
+  refreshList();
+  pollTimer = setInterval(refreshList, 2500);
+}
+
+async function refreshList() {
+  try {
+    const data = await api("/list");
+    allItems = data.items || [];
+    renderList();
+    document.getElementById("scan-time").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    // If active item was updated, refresh detail
+    if(activeId) {
+      const cur = allItems.find(x=>x.id===activeId);
+      if(cur) updateDetailHeader(cur);
+    }
+  } catch {}
+}
+
+// ─── Level helpers ────────────────────────────────────────────────────────────
+const LEVEL_LABEL = {SAFE:"安全",CAUTION:"注意",SLOW:"缓行",STOP:"禁行"};
+const LEVEL_COLOR = {SAFE:"var(--safe)",CAUTION:"var(--caution)",SLOW:"var(--slow)",STOP:"var(--stop)"};
+const LEVEL_BG    = {SAFE:"var(--safe-bg)",CAUTION:"var(--caution-bg)",SLOW:"var(--slow-bg)",STOP:"var(--stop-bg)"};
+const LEVEL_BORDER= {SAFE:"var(--safe-border)",CAUTION:"var(--caution-border)",SLOW:"var(--slow-border)",STOP:"var(--stop-border)"};
+const LEVEL_FULL  = {SAFE:"安全通行",CAUTION:"注意观察",SLOW:"缓行通过",STOP:"禁止通行"};
+
+// ─── Render list ──────────────────────────────────────────────────────────────
+function renderList() {
+  const el = document.getElementById("file-list");
+  document.getElementById("list-count").textContent = allItems.length;
+
+  if(!allItems.length) {
+    el.innerHTML = `<div class="empty-list">未检测到场景文件<br><span style="font-size:11px">请检查文件夹路径是否正确</span></div>`;
+    return;
+  }
+
+  el.innerHTML = allItems.map(item => {
+    const lv = item.level;
+    const chip = lv ? `<div class="spi-chip" style="background:${LEVEL_BG[lv]};color:${LEVEL_COLOR[lv]}">${LEVEL_LABEL[lv]}<br><span style="font-size:10px;opacity:.8">${item.spi}</span></div>` : `<div class="spi-chip" style="background:var(--surface2);color:var(--text3)">—</div>`;
+    const active = item.id === activeId ? " active" : "";
+    return `<div class="file-item${active}" onclick="loadDetail('${item.id}')">
+      <div class="file-icon-group">
+        <div class="file-dot ${item.has_image?'has':'miss'}" title="原图"></div>
+        <div class="file-dot ${item.has_bev?'has':'miss'}" title="BEV图"></div>
+        <div class="file-dot ${item.has_graph?'has':'miss'}" title="JSON"></div>
+      </div>
+      <div class="file-info">
+        <div class="file-id">${item.id}</div>
+        <div class="file-meta">${[item.has_image?"IMG":"",item.has_bev?"BEV":"",item.has_graph?"JSON":""].filter(Boolean).join(" · ")||"无文件"}</div>
+      </div>
+      ${chip}
+    </div>`;
+  }).join("");
+}
+
+// ─── Load detail ─────────────────────────────────────────────────────────────
+async function loadDetail(id) {
+  activeId = id;
+  renderList(); // highlight active
+
+  const panel = document.getElementById("detail-panel");
+  panel.innerHTML = `<div class="empty-right"><div style="width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite"></div><div>加载中...</div></div>
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
+
+  try {
+    const data = await api(`/detail?id=${encodeURIComponent(id)}&img=1`);
+    renderDetail(data);
+  } catch(e) {
+    panel.innerHTML = `<div class="empty-right"><div style="color:var(--stop)">加载失败：${e.message}</div></div>`;
+  }
+}
+
+// ─── Render detail ────────────────────────────────────────────────────────────
+function renderDetail(entry) {
+  const r = entry.result;
+  const panel = document.getElementById("detail-panel");
+
+  if(!r) {
+    panel.innerHTML = `
+    <div class="card">
+      <div style="font-size:14px;font-weight:500;margin-bottom:6px">场景 ${entry.id}</div>
+      <div style="color:var(--stop);font-size:13px">${entry.error ? "分析出错："+entry.error : "未找到 Scene Graph JSON，无法分析"}</div>
+      <div style="margin-top:10px;font-size:12px;color:var(--text2)">
+        ${entry.image_file ? "✓ 原图: "+entry.image_file : "✗ 无原图"}<br>
+        ${entry.bev_file   ? "✓ BEV: "+entry.bev_file   : "✗ 无BEV图"}<br>
+        ${entry.graph_file ? "✓ JSON: "+entry.graph_file : "✗ 无Scene Graph"}
+      </div>
+    </div>`;
+    return;
+  }
+
+  const l  = r.layers;
+  const l1 = l.layer1_crosswalk_occupancy;
+  const l2 = l.layer2_intersection_density;
+  const l3 = l.layer3_vehicle_behavior;
+  const lv = r.level;
+
+  const barC = s => s<25?"var(--safe)":s<50?"var(--caution)":s<75?"var(--slow)":"var(--stop)";
+
+  // Images
+  const imgSrc = entry.image_data || null;
+  const bevSrc = entry.bev_data   || null;
+
+  // Crosswalk rows
+  let cwRows = l1.details.flatMap(cw=>cw.occupants
+  .filter(o => o.type !== "PEDESTRIAN" && o.type !== "CYCLIST")
+  .map(o=>`<tr>
+    <td>${o.id}</td><td><span class="vtag vt-${o.type}">${o.type}</span></td>
+    <td style="font-size:11px;color:var(--text3)">${cw.crosswalk_id}</td>
+    <td>${(o.inter_ratio*100).toFixed(0)}%</td>
+    <td>${o.contribution.toFixed(3)}</td>
+  </tr>`)).join("") || `<tr><td colspan="5" style="color:var(--text3);text-align:center;padding:12px">无车辆压斑马线</td></tr>`;
+
+  let intRows = l2.vehicles.slice(0,10).map(v=>`<tr>
+    <td>${v.id}</td><td><span class="vtag vt-${v.type}">${v.type}</span></td>
+    <td>${(v.inter_ratio*100).toFixed(0)}%</td>
+  </tr>`).join("") || `<tr><td colspan="3" style="color:var(--text3);text-align:center;padding:12px">路口无拥堵车辆</td></tr>`;
+
+  let chainRows = l3.following_chains.map(c=>`<tr>
+    <td>${c.follower}</td><td style="color:var(--text3)">→</td><td>${c.leader}</td>
+    <td class="${c.risk?'risk-y':'risk-n'}">${c.risk?"⚠ 驶向斑马线":"正常"}</td>
+  </tr>`).join("") || `<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:12px">无跟车记录</td></tr>`;
+
+  panel.innerHTML = `
+
+  <!-- Row 1: images -->
+  <div class="card">
+    <div class="card-title">图像 — ${entry.id}
+      <span style="float:right;font-size:11px;font-weight:400;color:var(--text3)">
+        ${entry.image_file||"无原图"} · ${entry.bev_file||"无BEV图"}
+      </span>
+    </div>
+    <div class="img-row">
+      <div class="img-box">
+        ${imgSrc ? `<img src="${imgSrc}" alt="原图">` : `<div class="img-placeholder">无原图</div>`}
+        <div class="img-label">原图</div>
+      </div>
+      <div class="img-box">
+        ${bevSrc ? `<img src="${bevSrc}" alt="BEV">` : `<div class="img-placeholder">无BEV图</div>`}
+        <div class="img-label">BEV 鸟瞰图</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: gauge + advisory -->
+  <div class="card">
+    <div class="card-title">SPI 评分</div>
+    <div class="gauge-row">
+      <div class="gauge-wrap">${buildGauge(r.spi, LEVEL_COLOR[lv])}</div>
+      <div class="gauge-info">
+        <div class="level-badge" style="background:${LEVEL_BG[lv]};color:${LEVEL_COLOR[lv]}">
+          <span class="level-dot2" style="background:${LEVEL_COLOR[lv]}"></span>
+          ${LEVEL_FULL[lv]}
+        </div>
+        <div class="advisory-box" style="background:${LEVEL_BG[lv]};color:${LEVEL_COLOR[lv]};border-color:${LEVEL_BORDER[lv]}">
+          ${r.advisory}
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <div class="card-title" style="margin-bottom:8px">三层分项得分</div>
+      ${lbar("L1 斑马线占用 (50%)", l1.score, barC(l1.score))}
+      ${lbar("L2 路口密度 (30%)",   l2.score, barC(l2.score))}
+      ${lbar("L3 行车行为 (20%)",   l3.score, barC(l3.score))}
+    </div>
+  </div>
+
+  <!-- Row 3: detail tabs -->
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab(0,this)">斑马线占用</button>
+      <button class="tab" onclick="switchTab(1,this)">路口车辆</button>
+      <button class="tab" onclick="switchTab(2,this)">跟车行为</button>
+      <button class="tab" onclick="switchTab(3,this)">原始 JSON</button>
+    </div>
+
+    <div id="tab-0">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+        检测到 <strong>${l1.crosswalk_count}</strong> 个斑马线区域，得分 <strong>${l1.score}</strong>/100
+      </div>
+      <table><thead><tr><th>车辆ID</th><th>类型</th><th>斑马线</th><th>占用率</th><th>加权贡献</th></tr></thead>
+      <tbody>${cwRows}</tbody></table>
+    </div>
+    <div id="tab-1" style="display:none">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+        路口内 <strong>${l2.vehicle_count}</strong> 辆车，得分 <strong>${l2.score}</strong>/100
+      </div>
+      <table><thead><tr><th>车辆ID</th><th>类型</th><th>占据比</th></tr></thead>
+      <tbody>${intRows}</tbody></table>
+    </div>
+    <div id="tab-2" style="display:none">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+        <strong>${l3.chain_count}</strong> 条跟车链，得分 <strong>${l3.score}</strong>/100 ·
+        压线车辆：${l3.crosswalk_blocking_vehicles.join("、")||"无"}
+      </div>
+      <table><thead><tr><th>跟随车</th><th></th><th>前车</th><th>风险</th></tr></thead>
+      <tbody>${chainRows}</tbody></table>
+    </div>
+    <div id="tab-3" style="display:none">
+      <pre style="font-size:11px;color:var(--text2);background:var(--surface2);padding:12px;border-radius:var(--rmd);overflow-x:auto;line-height:1.5;max-height:300px;overflow-y:auto">${JSON.stringify(r, null, 2)}</pre>
+    </div>
+  </div>`;
+}
+
+function lbar(label, score, color) {
+  return `<div class="lbar">
+    <span class="lbar-label">${label}</span>
+    <div class="lbar-track"><div class="lbar-fill" style="width:${score}%;background:${color}"></div></div>
+    <span class="lbar-val">${score}</span>
+  </div>`;
+}
+
+function switchTab(idx, btn) {
+  [0,1,2,3].forEach(i => {
+    const el = document.getElementById(`tab-${i}`);
+    if(el) el.style.display = i===idx?"":"none";
+  });
+  document.querySelectorAll(".tab").forEach((t,i) => t.classList.toggle("active", i===idx));
+}
+
+function buildGauge(spi, color) {
+  const r=56, cx=75, cy=68;
+  const angle = Math.PI - (spi/100)*Math.PI;
+  const x = cx + r*Math.cos(angle);
+  const y = cy - r*Math.sin(angle);
+  const large = spi>50?1:0;
+  return `<svg viewBox="0 0 150 80" width="150" height="80">
+    <path d="M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}" fill="none" stroke="var(--surface2)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M ${cx-r} ${cy} A ${r} ${r} 0 ${large} 1 ${x} ${y}" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="${x}" cy="${y}" r="4.5" fill="${color}"/>
+    <text x="${cx}" y="${cy-6}" text-anchor="middle" font-size="22" font-weight="500" fill="${color}" font-family="-apple-system,sans-serif">${spi}</text>
+    <text x="${cx}" y="${cy+7}" text-anchor="middle" font-size="9" fill="var(--text3)" font-family="sans-serif">/ 100</text>
+    <text x="22" y="${cy+14}" font-size="8" fill="var(--text3)" font-family="sans-serif">0</text>
+    <text x="122" y="${cy+14}" font-size="8" fill="var(--text3)" font-family="sans-serif">100</text>
+  </svg>`;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+setTimeout(checkHealth, 400);
+</script>
+</body>
+</html>
